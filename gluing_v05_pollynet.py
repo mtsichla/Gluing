@@ -114,11 +114,11 @@ def calculate_norm_factors_raman(repeats, averaged_signals_array, channel_gluing
     
     return bin_low_list, bin_high_list, mean_norm_factor_list, corrcoef_list, snr_nf_value_list, corr_coef, snr_nf, snr_ff
 
-def process_gluing_2nd_step_raman(time, mean_norm_factor_list, bin_low_list, bin_high_list, average_interval, first_bin, raw_signals, depol_cal_angle, depol_cal_angle_value, range_corr_arr, channel_gluing_indexes, glued_signal):
+def process_gluing_2nd_step_raman(time, mean_norm_factor_list, bin_low_list, bin_high_list, average_interval, depol_cal_angle, depol_cal_angle_value, range_corr_arr, channel_gluing_indexes, glued_signal):
     t = 0
     k = 0
     while t < time:
-        if np.nanmean(raw_signals[t, first_bin:first_bin + 3, channel_gluing_indexes[1]]) == 0: ### mean betwen 0:3 first heights to ensure that the raman channels was closed and not one specific height because statistical that could be zero
+        if np.nanmean(range_corr_arr[t, 0:3, channel_gluing_indexes[1]]) == 0: ### mean betwen 0:3 first heights to ensure that the raman channels was closed and not one specific height because statistical that could be zero
             t += 1      
             continue
         else:
@@ -132,7 +132,7 @@ def process_gluing_2nd_step_raman(time, mean_norm_factor_list, bin_low_list, bin
             
             print(limit)
             for i in range(t, limit):
-                if np.nanmean(raw_signals[i, first_bin:first_bin + 3, channel_gluing_indexes[1]]) == 0:
+                if np.nanmean(range_corr_arr[i, 0:3, channel_gluing_indexes[1]]) == 0:
                     continue
                 if int(depol_cal_angle[i]) != depol_cal_angle_value:
                     continue
@@ -190,15 +190,7 @@ average_interval = 45
 
 depol_cal_angle_value = 0
 
-dead_time = 4                            # The dead time of the photomultiplier tube. [ns]
 
-first_bin = 251
-  
-idx_min = first_bin // 10
-idx_max = first_bin * 9 // 10
-
-
-bin_length = 2.997E+8 * 50E-9 / 2
 
 
 ##### =============================================================================
@@ -220,13 +212,7 @@ for file in all_file_list:
         continue
     channels = len(d.dimensions['channel'])
     height = len(d.dimensions['height'])
-    location = getattr(d, 'location')
-    daytime = file
     
-    institution = file[-15:-12]
-    
-    raw_signals = d.variables["raw_signal"][:, :, :]
-    measurement_shots = d.variables["measurement_shots"][:, :]
     depol_cal_angle = d.variables["depol_cal_angle"][:]
     if_center = d.variables["if_center"][:]
     polstate = d.variables["polstate"][:]
@@ -256,71 +242,7 @@ for file in all_file_list:
                 4:"532", 5:"532s", 6:"607", 7:"1064",
                 8:"532NF", 9:"607NF", 10:"355NF", 11:"387NF", 12:"532sNF", 13:"1058", 14:"1064s"}
     
-    zenith_angle = d.variables["zenithangle"]      # Set the zenith angle of the laser beam. [degrees]
-   
 
-    
-    #####################convert bins to altitude#################### 
-    
-    distance = np.arange(0, bin_length * (height - first_bin), bin_length) # Create distance vector that corresponds to each vertical bin.
-    altitude = distance * np.cos(np.deg2rad(zenith_angle))  #   Convert the distance to altitude.
-    altitude_array = np.tile(altitude, (channels,1)).T
-    
-        
-    
-    
-    ###############DEADTIME_CORRECTION NONPARALYZABLE##############
-    
-
-    deadtime_corr_arr = np.zeros(raw_signals.shape)
-    
-    for i in range (time):
-        for j in range (channels):
-            raw_signal = raw_signals[i,:,j]
-            measurement_shot = measurement_shots[i, j]
-            deadtime_corr_arr[i,:,j] = nes_fun._deadtime_correction_from_verlauf(raw_signal, dead_time, measurement_shot)    
-    print('end deadtime correction')
-    
-        
-    
-    ##################BACKGROUND_CORRECTION##################
-    
-    
-    background_mean_array = np.zeros((time,channels))
-    
-    bg_corr_arr = np.zeros(raw_signals.shape)
-    
-    for i in range (time):
-        for j in range (channels):  
-            raw_signal = deadtime_corr_arr[i, :, j]
-            bg_corr_arr[i, :, j], background_mean = nes_fun._background_correction(raw_signal, idx_min, idx_max)
-            background_mean_array[i][j] = background_mean     
-    print('end background correction')
-    
-    #bg_corr_arr = ma.masked_where(bg_corr_arr<0, bg_corr_arr, copy=True)
-    ##################FIRST_BIN_CORRECTION##################
-    
-    #bg_corr_arr=bg_corr_arr.astype("float64")
-    #bg_corr_arr[bg_corr_arr<0] = np.nan
-    
-    first_bin_corr_arr = bg_corr_arr[:,first_bin:,:] ## + 1 gia na mhn exw apeirismo sta 0 m
-    
-
-        
-    
-    ##################RANGE_CORRECTION##################
-    range_corr_arr = np.zeros(first_bin_corr_arr.shape)
-    
-    for i in range (time):
-        raw_signal = first_bin_corr_arr[i, :, :]
-        range_corr_arr[i, :, :] = nes_fun._range_correction(raw_signal, altitude_array)
-    print('end range correction')
-    
-    #range_corr_arr = ma.masked_where(range_corr_arr<0, range_corr_arr, copy=True)
-    #range_corr_arr = range_corr_arr.astype('float64')
-    #range_corr_arr[range_corr_arr.mask] = np.nan
-    
-    range_corr_arr_initial = np.copy(range_corr_arr)
     
         
     
@@ -328,7 +250,7 @@ for file in all_file_list:
     
 
     repeats = time // average_interval
-    averaged_signals_array = np.zeros((repeats, (height-first_bin), channels))
+    averaged_signals_array = np.zeros((repeats, len(range_corr_arr[1]), channels))
         
 
     t = 0
@@ -343,7 +265,7 @@ for file in all_file_list:
                     if (int(depol_cal_angle[z])!=depol_cal_angle_value):
                         continue
                     if '%s'%ch=="387" or '%s'%ch=='407' or '%s'%ch=="607" or '%s'%ch=="607NF" or '%s'%ch=="387NF" or '%s'%ch=="1058":
-                        if np.nanmean(raw_signals[z, first_bin:first_bin+3, channels_dictionary['%s'%ch]])==0:
+                        if np.nanmean(range_corr_arr[z, 0:3, channels_dictionary['%s'%ch]])==0:
                             continue
                     z_list.append(z)
                 averaged_signals_array[t,:,channels_dictionary['%s'%ch]] = np.nanmean(range_corr_arr[z_list, :, channels_dictionary['%s'%ch]], axis=0)
@@ -355,7 +277,7 @@ for file in all_file_list:
                     if (int(depol_cal_angle[z])!=depol_cal_angle_value):
                         continue
                     if '%s'%ch=="387" or '%s'%ch=='407' or '%s'%ch=="607" or '%s'%ch=="607NF" or '%s'%ch=="387NF" or '%s'%ch=="1058":
-                        if np.nanmean(raw_signals[z, first_bin:first_bin+3, channels_dictionary['%s'%ch]])==0:
+                        if np.nanmean(range_corr_arr[z, 0:3, channels_dictionary['%s'%ch]])==0:
                             continue
                     z_list.append(z)
                 averaged_signals_array[t,:,channels_dictionary['%s'%ch]] = np.nanmean(range_corr_arr[z_list, :, channels_dictionary['%s'%ch]], axis=0)
@@ -415,7 +337,7 @@ for file in all_file_list:
 #            snr_ff = f"snr_ff_{if_center[ch[0]]}"
             
             process_gluing_2nd_step_raman(
-            time, mean_norm_factor_list, bin_low_list, bin_high_list, average_interval, first_bin, raw_signals, depol_cal_angle, depol_cal_angle_value, range_corr_arr, ch, glued_signal)
+            time, mean_norm_factor_list, bin_low_list, bin_high_list, average_interval, depol_cal_angle, depol_cal_angle_value, range_corr_arr, ch, glued_signal)
 
         else:
             
