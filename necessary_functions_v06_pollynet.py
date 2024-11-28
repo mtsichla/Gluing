@@ -33,7 +33,7 @@ def optimum_norm_region(nf_signal, ff_signal, overlap, corr_coef_threshold, snr_
     Returns
     -------
     norm_region: integer list
-       The vertical region in bins, where the signal normalization will be performed. [start, end]
+       Two integers that define: the first the base of the window and the second the window interval addition to the minimum window.
     """
     iterations = 26 
     minimum_window = 20
@@ -84,8 +84,7 @@ def optimum_norm_region(nf_signal, ff_signal, overlap, corr_coef_threshold, snr_
 
 def gluing_window_parameters(nf_signal, ff_signal, overlap, corr_coef_threshold, snr_nf_theshold):
     """
-    Glue the adjusted Near Field signal with the Far Field signal, after 
-    performing a weighted averaging for a specified vertical region.
+    Calculates the gluing window and the normalization factor of near field to the far field in that window
     
     Parameters
     ----------
@@ -93,30 +92,36 @@ def gluing_window_parameters(nf_signal, ff_signal, overlap, corr_coef_threshold,
        The Near Field signal.
     ff_signal: vector
        The Far Field signal.
+    overlap: integer 
+       lower bin to start looking for the gluing window
+    corr_coef_threshold: float
+       minimum correlation coefficient that the signals must have to choose gluing window
+    snr_nf_theshold: float
+       minimum signal to noise ratio that the near field signals must have to choose gluing window
        
     Returns
     -------
-    glued_signal: vector
-       The glued signals.
-    nf_adjusted_signal: vector
-       The normalized Near Field signal to the FF signal.
-    gluing_region: integer list
-       The vertical region in bins, where the signal gluing is performed. [start, end]
+    bin_low: integer 
+       the base bin of the window
+    bin_high: integer
+       the upper bin of the window
+    mean_norm_factor: float
+       the normalization factor
     """
     # Determine the ideal gluing region.
     next_max_corr_coef_position = optimum_norm_region(nf_signal, ff_signal, overlap, corr_coef_threshold, snr_nf_theshold)
     minimum_window = 20
 
-    bin_low = overlap + next_max_corr_coef_position[0][0] #to np.where gyrnaei tuples apo arrays kai emeis theloume mono thn prwth timh tou array
+    bin_low = overlap + next_max_corr_coef_position[0][0] 
     bin_high = overlap + next_max_corr_coef_position[0][0] + minimum_window + next_max_corr_coef_position[1][0]
     
-    mean_norm_factor = np.mean(ff_signal[bin_low:bin_high]) / np.mean(nf_signal_smoothed[bin_low:bin_high])
+    mean_norm_factor = np.mean(ff_signal[bin_low:bin_high]) / np.mean(nf_signal[bin_low:bin_high])
     
 
     return bin_low, bin_high, mean_norm_factor  
 
 
-def _signal_gluing_2nd(nf_signal, ff_signal, mean_norm_factor, bin_low, bin_high):
+def signal_gluing(nf_signal, ff_signal, mean_norm_factor, bin_low, bin_high):
     """
     Glue the adjusted Near Field signal with the Far Field signal, after 
     performing a weighted averaging for a specified vertical region.
@@ -127,15 +132,17 @@ def _signal_gluing_2nd(nf_signal, ff_signal, mean_norm_factor, bin_low, bin_high
        The Near Field signal.
     ff_signal: vector
        The Far Field signal.
-       
+    bin_low: integer 
+       the base bin of the window
+    bin_high: integer
+       the upper bin of the window
+    mean_norm_factor: float
+       the normalization factor
+    
     Returns
     -------
     glued_signal: vector
        The glued signals.
-    nf_adjusted_signal: vector
-       The normalized Near Field signal to the FF signal.
-    gluing_region: integer list
-       The vertical region in bins, where the signal gluing is performed. [start, end]
     """
                 
     nf_adjusted_signal = nf_signal * mean_norm_factor
@@ -152,7 +159,7 @@ def _signal_gluing_2nd(nf_signal, ff_signal, mean_norm_factor, bin_low, bin_high
     averaging_weights = np.column_stack((nf_weight, ff_weight))
     
     # Assign variables according to the selected vertical range for the NF-FF comparison.
-    nf = nf_adjusted_signal[bin_low : bin_high] #360 to bin pou antistoixei sta 1000m(ta prwta 250 bins einai to pre-trigger) kai 493 to bin pou antistoixei sta 2000m
+    nf = nf_adjusted_signal[bin_low : bin_high] 
     ff = ff_signal[bin_low : bin_high]
     
     # Calculate weighted average.
@@ -160,7 +167,6 @@ def _signal_gluing_2nd(nf_signal, ff_signal, mean_norm_factor, bin_low, bin_high
 
     # Glue the signals.
     glued_signal = np.concatenate((nf_adjusted_signal[:bin_low], average_signal, ff_signal[bin_high:]), axis=0)
-#    glued_signal = np.round(np.array(np.concatenate((nf_adjusted_signal[:bin_low], ff_signal[bin_low:]), axis=0)))
 
-    return glued_signal, ff_signal, nf_adjusted_signal, average_signal, averaging_weights  
+    return glued_signal  
 

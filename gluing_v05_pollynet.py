@@ -41,10 +41,10 @@ def calculate_norm_factors_klett(repeats, averaged_signals_array, channel_gluing
         nf_signal = averaged_signals_array[i, :, channel_gluing_indexes[1]]
         ff_signal = averaged_signals_array[i, :, channel_gluing_indexes[0]]
 
-        corr_coef, snr_nf, snr_ff, next_max_corr_coef, next_max_corr_coef_position, snr_nf_value = nes_fun._optimum_norm_region(
+        next_max_corr_coef_position = nes_fun.optimum_norm_region(
             nf_signal, ff_signal, overlap, corr_coef_threshold, snr_nf_threshold)
         
-        bin_low, bin_high, mean_norm_factor = nes_fun._signal_gluing(
+        bin_low, bin_high, mean_norm_factor = nes_fun.gluing_window_parameters(
             nf_signal, ff_signal, overlap, corr_coef_threshold, snr_nf_threshold)
         
         bin_low_list.append(bin_low)
@@ -249,39 +249,34 @@ for file in all_file_list:
     ################## AVERAGING  ####################
     
 
-    repeats = time // average_interval
+    repeats = (time + average_interval - 1) // average_interval  # Ceiling division to include partial intervals
     averaged_signals_array = np.zeros((repeats, len(range_corr_arr[1]), channels))
-        
-
+    
     t = 0
     z_list_list = []
     z_list_for_raman_list = []
-    for i in range (0,time,average_interval):
-        j = i + average_interval
-        if j<time:            
-            for ch in channel_list:
-                z_list = []
-                for z in range (i, j):
-                    if (int(depol_cal_angle[z])!=depol_cal_angle_value):
+    
+    # Function to process an interval
+    def process_interval(start, end):
+        for ch in channel_list:
+            z_list = []
+            for z in range(start, end):
+                if int(depol_cal_angle[z]) != depol_cal_angle_value:
+                    continue
+                if '%s' % ch in {"387", "407", "607", "607NF", "387NF", "1058"}:
+                    if np.nanmean(range_corr_arr[z, 0:3, channels_dictionary['%s' % ch]]) == 0:
                         continue
-                    if '%s'%ch=="387" or '%s'%ch=='407' or '%s'%ch=="607" or '%s'%ch=="607NF" or '%s'%ch=="387NF" or '%s'%ch=="1058":
-                        if np.nanmean(range_corr_arr[z, 0:3, channels_dictionary['%s'%ch]])==0:
-                            continue
-                    z_list.append(z)
-                averaged_signals_array[t,:,channels_dictionary['%s'%ch]] = np.nanmean(range_corr_arr[z_list, :, channels_dictionary['%s'%ch]], axis=0)
-            t += 1 
-        else:
-            for ch in channel_list:
-                z_list = []
-                for z in range (i, time):
-                    if (int(depol_cal_angle[z])!=depol_cal_angle_value):
-                        continue
-                    if '%s'%ch=="387" or '%s'%ch=='407' or '%s'%ch=="607" or '%s'%ch=="607NF" or '%s'%ch=="387NF" or '%s'%ch=="1058":
-                        if np.nanmean(range_corr_arr[z, 0:3, channels_dictionary['%s'%ch]])==0:
-                            continue
-                    z_list.append(z)
-                averaged_signals_array[t,:,channels_dictionary['%s'%ch]] = np.nanmean(range_corr_arr[z_list, :, channels_dictionary['%s'%ch]], axis=0)
-
+                z_list.append(z)
+            if z_list:  # Ensure z_list is not empty before averaging
+                averaged_signals_array[t, :, channels_dictionary['%s' % ch]] = np.nanmean(
+                    range_corr_arr[z_list, :, channels_dictionary['%s' % ch]], axis=0
+                )
+    
+    # Main loop for full intervals
+    for i in range(0, time, average_interval):
+        j = min(i + average_interval, time)  # Ensure the interval doesn't exceed `time`
+        process_interval(i, j)
+        t += 1
 
     ##### =============================================================================
     ##### FIND CHANNELS TO GLUE
